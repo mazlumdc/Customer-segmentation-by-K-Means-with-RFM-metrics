@@ -1,0 +1,93 @@
+import numpy as np
+import pandas as pd
+import datetime as dt
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import MinMaxScaler
+from yellowbrick.cluster import KElbowVisualizer
+
+pd.set_option('display.max_columns', 20)
+pd.set_option('display.max_rows', 20)
+pd.set_option('display.float_format', lambda x: '%.5f' % x)
+
+
+
+df_ = pd.read_excel("datasets/online_retail_II.xlsx")
+df = df_.copy()
+df.head()
+
+# Removing missing observations from the dataset
+df.dropna(inplace=True)
+
+# The 'C' in the invoices shows the canceled transactions. Removing canceled transactions from the dataset
+df = df[~df["Invoice"].str.contains("C", na=False)]
+
+#Creating a variable named 'Total Price' that represents the total earnings per invoice
+df["TotalPrice"] = df["Quantity"] * df["Price"]
+
+
+df = df[df["TotalPrice"] > 0]
+
+df.head()
+
+###############################################################
+# Calculation of RFM Metrics
+###############################################################
+
+df["InvoiceDate"].max() # Timestamp('2010-12-09 20:01:00')
+analiz_tarihi = dt.datetime(2010, 12, 11)
+
+
+df.groupby('Customer ID').agg({'InvoiceDate': lambda date: (analiz_tarihi - date.max()).days,
+                                'Invoice': lambda num: num.nunique(),
+                                'TotalPrice': lambda TotalPrice: TotalPrice.sum()})
+
+
+rfm = df.groupby('Customer ID').agg({'InvoiceDate': lambda date: (analiz_tarihi - date.max()).days,
+                                     'Invoice': lambda num: num.nunique(),
+                                     'TotalPrice': lambda TotalPrice: TotalPrice.sum()})
+
+
+rfm.head()
+
+rfm.columns = ['recency', 'frequency', 'monetary']
+rfm = rfm[rfm["monetary"] > 0]
+
+rfm.head()
+
+################################
+# K-Means
+################################
+
+#Standardization
+
+sc = MinMaxScaler((0, 1))
+df = sc.fit_transform(rfm)
+
+df
+
+# Determining the Optimum Number of Clusters
+kmeans = KMeans()
+elbow = KElbowVisualizer(kmeans, k=(2, 20))
+elbow.fit(df)
+elbow.elbow_value_
+
+#Optimum number of clusters: 6
+
+
+# Add the clusters to df¶
+
+kmeans = KMeans(n_clusters=elbow.elbow_value_).fit(df)
+kumeler = kmeans.labels_
+
+rfm["cluster_no"] = kumeler
+rfm["cluster_no"] = rfm["cluster_no"] + 1
+
+rfm.head()
+
+# Total number of the clusters in the dataset
+
+rfm.groupby("cluster_no").agg({"cluster_no": "count"})
+
+
+# Mean of the RFM metrics for the clusters
+rfm.groupby("cluster_no").agg(np.mean)
